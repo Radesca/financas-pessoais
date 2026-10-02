@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finanças Pessoais</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --card: #fff; --text: #1d2433; --muted: #6b7489; --line: #e6e9f2;
+    --brand: #4f46e5; --brand-soft: #eef0ff; --ok: #12a05c; --bad: #d93a4a;
+    --shadow: 0 1px 3px rgba(20,30,60,.08), 0 8px 24px rgba(20,30,60,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1320; --card: #181d2e; --text: #e8ebf5; --muted: #8f98b3; --line: #262d44;
+      --brand: #818cf8; --brand-soft: #232a4d; --ok: #3ddc97; --bad: #ff6b7a; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 28px 16px 8px; max-width: 1000px; margin: auto; }
+  h1 { margin: 0; font-size: 24px; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { max-width: 1000px; margin: auto; padding: 16px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .card { background: var(--card); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
+  .card small { color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-size: 11px; }
+  .card strong { display: block; font-size: 24px; margin-top: 4px; }
+
+  nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  nav button { border: 0; background: transparent; color: var(--muted); padding: 8px 14px;
+               border-radius: 999px; cursor: pointer; font: inherit; font-weight: 600; }
+  nav button.on { background: var(--brand-soft); color: var(--brand); }
+
+  section.painel { background: var(--card); border-radius: 14px; padding: 20px; box-shadow: var(--shadow); }
+  form { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); flex: 1 1 140px; }
+  input, select { font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px;
+                  background: var(--bg); color: var(--text); min-width: 0; }
+  input:focus, select:focus { outline: 2px solid var(--brand); border-color: transparent; }
+  .btn { background: var(--brand); color: #fff; border: 0; padding: 10px 18px; border-radius: 9px;
+         font: inherit; font-weight: 600; cursor: pointer; }
+  .btn:hover { filter: brightness(1.08); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .C { color: var(--ok); } .D { color: var(--bad); }
+  .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 18px; }
+  .x:hover { color: var(--bad); }
+  .vazio { color: var(--muted); text-align: center; padding: 24px; }
+  .scroll { overflow-x: auto; }
+
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text);
+           color: var(--bg); padding: 10px 18px; border-radius: 10px; opacity: 0; transition: opacity .2s;
+           pointer-events: none; }
+  #toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Finanças Pessoais</h1>
+  <p>Arquivos indexados com árvore binária de busca</p>
+</header>
+<main>
+  <div class="cards">
+    <div class="card"><small>Saldo geral</small><strong id="k-saldo">–</strong></div>
+    <div class="card"><small>Contas</small><strong id="k-contas">–</strong></div>
+    <div class="card"><small>Transações</small><strong id="k-trans">–</strong></div>
+  </div>
+  <nav id="abas"></nav>
+  <section class="painel" id="painel"></section>
+</main>
+<div id="toast"></div>
+
+<script>
+const moeda = v => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const dataBR = iso => iso.split("-").reverse().join("/");
+const hoje = () => new Date().toISOString().slice(0, 10);
+
+// Cada aba: título, campos do formulário e colunas da tabela.
+// Campo: [nome, rótulo, tipo] — tipo "sel:<tabela>" monta um <select>.
+const ABAS = {
+  transacoes: {
+    titulo: "Transações",
+    campos: [["cod_conta", "Conta", "sel:contas"], ["cod_cat", "Categoria", "sel:categorias"],
+             ["data", "Data", "date"], ["valor", "Valor", "number"], ["tipo", "Tipo", "sel:tipo"]],
+    colunas: [["Nº", t => t.codigo], ["Data", t => dataBR(t.data)], ["Conta", t => t.conta],
+              ["Categoria", t => t.categoria], ["Tipo", t => t.tipo === "C" ? "Crédito" : "Débito"],
+              ["Valor", t => (t.tipo === "C" ? "+ " : "– ") + moeda(t.valor), "num", t => t.tipo]],
+  },
+  contas: {
+    titulo: "Contas",
+    campos: [["descricao", "Descrição", "text"], ["cod_banco", "Banco", "sel:bancos"],
+             ["cod_pessoa", "Titular", "sel:pessoas"], ["saldo", "Saldo inicial", "number"]],
+    colunas: [["Cód", c => c.codigo], ["Descrição", c => c.descricao], ["Banco", c => c.banco],
+              ["Titular", c => c.titular], ["Saldo", c => moeda(c.saldo), "num"]],
+  },
+  pessoas: { titulo: "Pessoas", campos: [["texto", "Nome", "text"]],
+             colunas: [["Cód", p => p.codigo], ["Nome", p => p.nome]] },
+  bancos: { titulo: "Bancos", campos: [["texto", "Nome do banco", "text"]],
+            colunas: [["Cód", b => b.codigo], ["Banco", b => b.descricao]] },
+  categorias: { titulo: "Categorias", campos: [["texto", "Categoria", "text"]],
+                colunas: [["Cód", c => c.codigo], ["Categoria", c => c.descricao]] },
+};
+
+let dados = {}, aba = "transacoes";
+
+function el(tag, props = {}, ...filhos) {            // textContent evita injeção de HTML
+  const e = Object.assign(document.createElement(tag), props);
+  e.append(...filhos);
+  return e;
+}
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("on");
+  setTimeout(() => t.classList.remove("on"), 2500);
+}
+
+async function api(metodo, caminho, corpo) {
+  const r = await fetch(caminho, { method: metodo, body: corpo && JSON.stringify(corpo) });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.erro);
+  return json;
+}
+
+async function carregar() {
+  dados = await api("GET", "/api/dados");
+  document.getElementById("k-saldo").textContent = moeda(dados.saldo_geral);
+  document.getElementById("k-contas").textContent = dados.contas.length;
+  document.getElementById("k-trans").textContent = dados.transacoes.length;
+  desenhar();
+}
+
+function opcoes(origem) {
+  if (origem === "tipo") return [["D", "Débito"], ["C", "Crédito"]];
+  const rotulo = { contas: c => `${c.descricao} (${c.banco})`, pessoas: p => p.nome };
+  return dados[origem].map(r => [r.codigo, (rotulo[origem] || (x => x.descricao))(r)]);
+}
+
+function campo([nome, rotulo, tipo]) {
+  let entrada;
+  if (tipo.startsWith("sel:")) {
+    entrada = el("select", { name: nome, required: true },
+      ...opcoes(tipo.slice(4)).map(([v, t]) => el("option", { value: v }, t)));
+  } else {
+    entrada = el("input", { name: nome, type: tipo, required: true });
+    if (tipo === "number") Object.assign(entrada, { step: "0.01", placeholder: "0,00" });
+    if (tipo === "date") entrada.value = hoje();
+  }
+  return el("label", {}, rotulo, entrada);
+}
+
+function desenhar() {
+  const cfg = ABAS[aba];
+  const abas = document.getElementById("abas");
+  abas.replaceChildren(...Object.entries(ABAS).map(([k, c]) =>
+    el("button", { className: k === aba ? "on" : "", onclick: () => { aba = k; desenhar(); } }, c.titulo)));
+
+  const form = el("form", { onsubmit: enviar }, ...cfg.campos.map(campo), el("button", { className: "btn" }, "Adicionar"));
+
+  const linhas = dados[aba];
+  const tabela = linhas.length
+    ? el("div", { className: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, ...cfg.colunas.map(([t, , cls]) => el("th", { className: cls || "" }, t)), el("th"))),
+        el("tbody", {}, ...[...linhas].reverse().map(r => el("tr", {},
+          ...cfg.colunas.map(([, f, cls, cor]) => el("td", { className: `${cls || ""} ${cor ? cor(r) : ""}` }, String(f(r)))),
+          el("td", {}, el("button", { className: "x", title: "Excluir", onclick: () => excluir(r.codigo) }, "×")))))))
+    : el("div", { className: "vazio" }, "Nada cadastrado ainda.");
+
+  document.getElementById("painel").replaceChildren(form, tabela);
+}
+
+async function enviar(ev) {
+  ev.preventDefault();
+  try {
+    await api("POST", `/api/${aba}`, Object.fromEntries(new FormData(ev.target)));
+    toast("Salvo!");
+    await carregar();
+  } catch (e) { toast(e.message); }
+}
+
+async function excluir(codigo) {
+  if (!confirm("Excluir este registro?")) return;
+  try {
+    await api("DELETE", `/api/${aba}/${codigo}`);
+    await carregar();
+  } catch (e) { toast(e.message); }
+}
+
+carregar();
+</script>
+</body>
+</html>
