@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from .servico import CAMPO_TEXTO, ErroNegocio, Financas
 
 PAGINA = os.path.join(os.path.dirname(__file__), "static", "index.html")
+LIMITE_CORPO = 64 * 1024  # bytes aceitos em um POST
 
 
 def _criar(f, tabela, d):
@@ -71,7 +72,7 @@ def criar_handler(financas):
 
         def do_POST(self):
             tabela = self.path.removeprefix("/api/")
-            tamanho = int(self.headers.get("Content-Length", 0))
+            tamanho = min(int(self.headers.get("Content-Length", 0)), LIMITE_CORPO)
             self._tratar(lambda: {"codigo": _criar(financas, tabela, json.loads(self.rfile.read(tamanho)))})
 
         def do_DELETE(self):

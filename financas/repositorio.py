@@ -48,10 +48,12 @@ class Repositorio:
     def total_registros(self):
         return os.path.getsize(self.caminho) // self.tamanho_registro
 
-    def _ler(self, posicao):
-        with open(self.caminho, "rb") as f:
-            f.seek(posicao * self.tamanho_registro)
-            return self.desempacotar(f.read(self.tamanho_registro))
+    def _ler(self, posicao, arquivo=None):
+        if arquivo is None:
+            with open(self.caminho, "rb") as f:
+                return self._ler(posicao, f)
+        arquivo.seek(posicao * self.tamanho_registro)
+        return self.desempacotar(arquivo.read(self.tamanho_registro))
 
     def _escrever(self, posicao, registro):
         with open(self.caminho, "r+b") as f:
@@ -104,8 +106,9 @@ class Repositorio:
 
     def listar(self):
         """Registros ativos em ordem crescente de código (percurso em-ordem)."""
-        return [self._ler(pos) for _, pos in self.indice.em_ordem()]
+        with open(self.caminho, "rb") as f:
+            return [self._ler(pos, f) for _, pos in self.indice.em_ordem()]
 
     def proximo_codigo(self):
-        pares = self.indice.em_ordem()
-        return pares[-1][0] + 1 if pares else 1
+        maior = self.indice.maior_chave()
+        return 1 if maior is None else maior + 1

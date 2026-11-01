@@ -1,30 +1,21 @@
-# -*- coding: utf-8 -*-
-"""
-bst.py
-======
-Implementação da Árvore Binária de Busca (BST) usada como ÁREA DE ÍNDICES
-do sistema (conforme material "Árvores Binárias" / "Organização Básica de
-Arquivos - Arquivos Indexados").
+"""Árvore binária de busca (BST) usada como área de índices.
 
-Cada nó guarda:
-    - chave    -> o código (chave primária) do registro (ex.: codigo da Pessoa)
-    - posicao  -> a posição (número do registro, começando em 0) do registro
-                  correspondente dentro do ARQUIVO DE DADOS em disco
+Cada nó guarda a chave primária do registro (``chave``) e a posição dele no
+arquivo de dados (``posicao``, a partir de 0). A árvore vive em memória: ao
+iniciar, o repositório lê o arquivo de dados do começo ao fim e indexa cada
+registro ativo (ver ``Repositorio._carregar_indice``).
 
-A árvore inteira vive em memória (RAM). Quando o programa é iniciado, o
-arquivo de dados é lido sequencialmente do início ao fim e cada registro
-ativo é inserido na árvore (ver repositorio.py -> _carregar_indice).
+Busca, inclusão e exclusão passam primeiro pela árvore; só depois o programa
+vai ao arquivo ler ou gravar o registro completo.
 
-Isso reproduz exatamente a ideia da Aula de Arquivos Indexados: a busca,
-inclusão e exclusão são sempre feitas primeiro na ÁREA DE ÍNDICES (aqui, a
-árvore) e só depois vão até a ÁREA DE DADOS (o arquivo em disco) para
-ler/gravar o registro completo.
+Todas as operações são iterativas. Como os códigos são sequenciais, a árvore
+fica degenerada (vira uma lista encadeada) e uma versão recursiva estouraria
+o limite de recursão do Python com poucos milhares de registros.
+A árvore não é balanceada (não é AVL): o custo de cada operação é O(altura).
 """
 
 
 class No:
-    """Um nó da árvore binária. Equivalente ao 'struct No' do material em C++."""
-
     def __init__(self, chave, posicao):
         self.chave = chave
         self.posicao = posicao
@@ -33,124 +24,88 @@ class No:
 
 
 class ArvoreBinaria:
-    """Árvore Binária de Busca (BST) simples, sem balanceamento (não é AVL).
-
-    Mantém a propriedade: para qualquer nó, tudo à esquerda é menor e tudo
-    à direita é maior que a chave do nó (igual ao slide "Árvores Binárias").
-    """
+    """Para todo nó, as chaves à esquerda são menores e as da direita, maiores."""
 
     def __init__(self):
         self.raiz = None
 
-    # ------------------------------------------------------------------
-    # INCLUSÃO (versão iterativa, igual ao slide "Árvores Binárias -
-    # Inclusão de novo Nó")
-    # ------------------------------------------------------------------
     def inserir(self, chave, posicao):
-        novo = No(chave, posicao)
-
-        if self.raiz is None:
-            self.raiz = novo
-            return
-
-        atual = self.raiz
-        pai = None
+        """Insere a chave; se ela já existir, só atualiza a posição."""
+        pai, atual = None, self.raiz
         while atual is not None:
-            pai = atual
-            if chave < atual.chave:
-                atual = atual.esquerda
-            elif chave > atual.chave:
-                atual = atual.direita
-            else:
-                # Chave já existe: apenas atualiza a posição no arquivo
-                # (acontece, por exemplo, depois de um "update" físico).
+            if chave == atual.chave:
                 atual.posicao = posicao
                 return
+            pai = atual
+            atual = atual.esquerda if chave < atual.chave else atual.direita
 
-        if chave < pai.chave:
+        novo = No(chave, posicao)
+        if pai is None:
+            self.raiz = novo
+        elif chave < pai.chave:
             pai.esquerda = novo
         else:
             pai.direita = novo
 
-    # ------------------------------------------------------------------
-    # BUSCA (versão iterativa, igual ao slide "Árvores Binárias - Busca
-    # de Nó")
-    # ------------------------------------------------------------------
     def buscar(self, chave):
+        """Devolve o nó da chave, ou None se ela não existir."""
         atual = self.raiz
-        while atual is not None:
-            if chave == atual.chave:
-                return atual
-            elif chave < atual.chave:
-                atual = atual.esquerda
-            else:
-                atual = atual.direita
-        return None
-
-    # ------------------------------------------------------------------
-    # EXCLUSÃO (versão recursiva, igual ao slide "Árvores Binárias -
-    # Exclusão de Nó": trata os 3 casos -> sem filhos, um filho, dois
-    # filhos, usando o "menor da sub-árvore direita" como substituto)
-    # ------------------------------------------------------------------
-    def excluir(self, chave):
-        self.raiz = self._excluir(self.raiz, chave)
-
-    def _excluir(self, raiz, chave):
-        if raiz is None:
-            return None
-
-        if chave < raiz.chave:
-            raiz.esquerda = self._excluir(raiz.esquerda, chave)
-        elif chave > raiz.chave:
-            raiz.direita = self._excluir(raiz.direita, chave)
-        else:
-            # Encontrou o nó a ser removido
-            if raiz.esquerda is None and raiz.direita is None:
-                # Caso 1: não possui nenhum filho
-                return None
-            elif raiz.esquerda is None:
-                # Caso 2: possui apenas o filho direito
-                return raiz.direita
-            elif raiz.direita is None:
-                # Caso 2: possui apenas o filho esquerdo
-                return raiz.esquerda
-            else:
-                # Caso 3: possui dois filhos -> substitui pelo menor
-                # elemento da sub-árvore da direita (sucessor em-ordem)
-                aux = self._menor(raiz.direita)
-                raiz.chave = aux.chave
-                raiz.posicao = aux.posicao
-                raiz.direita = self._excluir(raiz.direita, aux.chave)
-        return raiz
-
-    def _menor(self, no):
-        atual = no
-        while atual.esquerda is not None:
-            atual = atual.esquerda
+        while atual is not None and atual.chave != chave:
+            atual = atual.esquerda if chave < atual.chave else atual.direita
         return atual
 
-    # ------------------------------------------------------------------
-    # PERCURSO EM-ORDEM (EMD): usado para listar os registros em ordem
-    # crescente de chave, sem precisar reler o arquivo inteiro fora de
-    # ordem.
-    # ------------------------------------------------------------------
+    def excluir(self, chave):
+        """Remove a chave (sem filhos, um filho ou dois filhos)."""
+        pai, no = None, self.raiz
+        while no is not None and no.chave != chave:
+            pai = no
+            no = no.esquerda if chave < no.chave else no.direita
+        if no is None:
+            return
+
+        if no.esquerda is not None and no.direita is not None:
+            # Dois filhos: o nó recebe os dados do sucessor (o menor da subárvore
+            # direita), e é o sucessor, que tem no máximo um filho, que sai.
+            pai, sucessor = no, no.direita
+            while sucessor.esquerda is not None:
+                pai, sucessor = sucessor, sucessor.esquerda
+            no.chave, no.posicao = sucessor.chave, sucessor.posicao
+            no = sucessor
+
+        filho = no.esquerda if no.esquerda is not None else no.direita
+        if pai is None:
+            self.raiz = filho
+        elif pai.esquerda is no:
+            pai.esquerda = filho
+        else:
+            pai.direita = filho
+
+    def maior_chave(self):
+        """Maior chave da árvore, ou None se ela estiver vazia."""
+        atual = self.raiz
+        while atual is not None and atual.direita is not None:
+            atual = atual.direita
+        return None if atual is None else atual.chave
+
     def em_ordem(self):
-        """Retorna uma lista [(chave, posicao), ...] em ordem crescente."""
-        resultado = []
-        self._em_ordem(self.raiz, resultado)
+        """Lista [(chave, posicao), ...] em ordem crescente de chave."""
+        resultado, pilha, atual = [], [], self.raiz
+        while pilha or atual is not None:
+            while atual is not None:
+                pilha.append(atual)
+                atual = atual.esquerda
+            atual = pilha.pop()
+            resultado.append((atual.chave, atual.posicao))
+            atual = atual.direita
         return resultado
 
-    def _em_ordem(self, no, resultado):
-        if no is not None:
-            self._em_ordem(no.esquerda, resultado)
-            resultado.append((no.chave, no.posicao))
-            self._em_ordem(no.direita, resultado)
-
     def altura(self):
-        """Altura da árvore (nível máximo). Só usada para fins didáticos."""
-        return self._altura(self.raiz)
-
-    def _altura(self, no):
-        if no is None:
-            return -1
-        return 1 + max(self._altura(no.esquerda), self._altura(no.direita))
+        """Altura da árvore (-1 se vazia). Usada para fins didáticos."""
+        maior, pilha = -1, [(self.raiz, 0)] if self.raiz else []
+        while pilha:
+            no, nivel = pilha.pop()
+            maior = max(maior, nivel)
+            for filho in (no.esquerda, no.direita):
+                if filho is not None:
+                    pilha.append((filho, nivel + 1))
+        return maior

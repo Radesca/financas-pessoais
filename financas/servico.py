@@ -3,9 +3,12 @@
 Datas entram e saem em AAAA-MM-DD (formato do arquivo).
 """
 
+import math
 import os
+from datetime import datetime
 
 from .repositorio import Repositorio
+from .utils import FORMATO_ARQUIVO
 
 # Esquema de cada tabela: (nome do campo, formato struct). "Ns" = texto de N bytes.
 ESQUEMAS = {
@@ -25,6 +28,25 @@ class ErroNegocio(ValueError):
     """Violação de regra de negócio (mensagem pronta para o usuário)."""
 
 
+def validar_texto(tabela, campo, texto):
+    """Garante que o texto cabe nos bytes reservados para o campo no arquivo."""
+    limite = int(dict(ESQUEMAS[tabela])[campo][:-1])
+    if len(texto.encode("utf-8")) > limite:
+        raise ErroNegocio(f"O texto passa de {limite} bytes e não cabe no registro.")
+
+
+def validar_numero(valor, nome):
+    if not math.isfinite(valor):
+        raise ErroNegocio(f"O {nome} precisa ser um número válido.")
+
+
+def validar_data(data):
+    try:
+        datetime.strptime(data, FORMATO_ARQUIVO)
+    except (TypeError, ValueError):
+        raise ErroNegocio("Data inválida. Use AAAA-MM-DD.") from None
+
+
 def efeito_no_saldo(tipo, valor):
     return valor if tipo == "C" else -valor
 
@@ -32,12 +54,10 @@ def efeito_no_saldo(tipo, valor):
 class Financas:
     def __init__(self, pasta="dados"):
         self.pasta = pasta
-        self.pessoas = Repositorio(os.path.join(pasta, "pessoas.dat"), ESQUEMAS["pessoas"])
-        self.bancos = Repositorio(os.path.join(pasta, "bancos.dat"), ESQUEMAS["bancos"])
-        self.categorias = Repositorio(os.path.join(pasta, "categorias.dat"), ESQUEMAS["categorias"])
-        self.contas = Repositorio(os.path.join(pasta, "contas.dat"), ESQUEMAS["contas"])
-        self.transacoes = Repositorio(os.path.join(pasta, "transacoes.dat"), ESQUEMAS["transacoes"])
-        self.repos = {nome: getattr(self, nome) for nome in ESQUEMAS}
+        self.repos = {nome: Repositorio(os.path.join(pasta, f"{nome}.dat"), esquema)
+                      for nome, esquema in ESQUEMAS.items()}
+        self.pessoas, self.bancos, self.categorias, self.contas, self.transacoes = (
+            self.repos[nome] for nome in ESQUEMAS)
 
     def _descricao(self, tabela, codigo, padrao):
         registro = self.repos[tabela].buscar(codigo)
@@ -50,6 +70,7 @@ class Financas:
         texto = (texto or "").strip()
         if not texto:
             raise ErroNegocio("O texto não pode ser vazio.")
+        validar_texto(tabela, CAMPO_TEXTO[tabela], texto)
         repo = self.repos[tabela]
         codigo = codigo or repo.proximo_codigo()
         if repo.existe(codigo):
@@ -62,11 +83,14 @@ class Financas:
             raise ErroNegocio("Banco inválido.")
         if not self.pessoas.existe(cod_pessoa):
             raise ErroNegocio("Pessoa inválida.")
+        descricao = (descricao or "").strip()
+        validar_texto("contas", "descricao", descricao)
+        validar_numero(saldo, "saldo")
         codigo = codigo or self.contas.proximo_codigo()
         if self.contas.existe(codigo):
             raise ErroNegocio(f"Já existe uma conta com o código {codigo}.")
         self.contas.inserir({"codigo": codigo, "cod_banco": cod_banco, "cod_pessoa": cod_pessoa,
-                             "descricao": (descricao or "").strip(), "saldo": saldo})
+                             "descricao": descricao, "saldo": saldo})
         return codigo
 
     def excluir(self, tabela, codigo):
@@ -91,8 +115,10 @@ class Financas:
             raise ErroNegocio("Conta inválida.")
         if tipo not in ("D", "C"):
             raise ErroNegocio("Tipo deve ser D (débito) ou C (crédito).")
+        validar_numero(valor, "valor")
         if valor <= 0:
             raise ErroNegocio("O valor deve ser maior que zero.")
+        validar_data(data)
         codigo = self.transacoes.proximo_codigo()
         self.transacoes.inserir({"codigo": codigo, "cod_cat": cod_cat, "cod_conta": cod_conta,
                                  "data": data, "valor": valor, "tipo": tipo})
